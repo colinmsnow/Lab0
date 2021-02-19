@@ -8,6 +8,7 @@ import picos as pic
 import networkx as nx
 import itertools
 import cvxopt
+import matplotlib.pyplot as plt
 
 
 class Division:
@@ -75,8 +76,8 @@ class Division:
         if not flag1:
             if solver == "Network Flows":
                 flag1 = self.network_flows(saturated_edges)
-            elif solver == "Linear Programming":
-                flag1 = self.linear_programming(saturated_edges)
+            # elif solver == "Linear Programming":
+            #     flag1 = self.linear_programming(saturated_edges)
 
         return flag1
 
@@ -91,9 +92,53 @@ class Division:
         the amount of additional games they have against each other
         '''
 
+        team_ids = self.get_team_IDs()
+
+        # Create Graph with source and sink
+        self.G = nx.DiGraph()
+        self.G.add_node("S", layer=1)
+        self.G.add_node("T", layer=4)
+        
+        # Calculate max wins the givwn team could have if they won all remaining games
+        max_wins = self.teams[teamID].wins + self.teams[teamID].remaining
+        
+        #Create a dict of relevant edges to chack saturation
         saturated_edges = {}
 
-        #TODO: implement this
+        for p in team_ids:
+            if p == teamID:
+                continue
+            # Create nodes for all other teams
+            self.G.add_node(self.teams[p].name, layer=3)
+            #get max teamID wins - this team wins
+            p_wins = self.teams[p].wins 
+            self.G.add_edge(self.teams[p].name, "T", capacity=max_wins-p_wins)
+
+        for p1 in team_ids:
+            if p1 != teamID:
+                for p2 in team_ids:
+                    if p2 != p1 and p2 != teamID and p2>p1:
+                        # Iterate through possible team matchups without duplicates
+                        matchup = self.teams[p1].name+" v. "+self.teams[p2].name
+                        self.G.add_node(matchup, layer=2)
+
+                        # Calculate edge capacity
+                        cap = self.teams[p1].get_against(p2)
+                        self.G.add_edge("S", matchup, capacity=cap)
+
+                        # Add to dict of saturated edges
+                        saturated_edges[matchup] = cap
+
+                        # Connect to layer 3 with large capacity
+                        self.G.add_edge(matchup, self.teams[p1].name, capacity=1000000)
+                        self.G.add_edge(matchup, self.teams[p2].name, capacity=1000000)
+
+
+        ## Plot graph
+        # pos = nx.multipartite_layout(self.G, subset_key="layer")
+        # nx.draw_networkx_edge_labels(self.G,pos)
+        # nx.draw(self.G, pos, with_labels=True)
+        # plt.show()
 
         return saturated_edges
 
@@ -107,30 +152,13 @@ class Division:
         the amount of additional games they have against each other
         return: True if team is eliminated, False otherwise
         '''
+        flow_value, _ = nx.maximum_flow(self.G, "S", "T")
+        sum_edges = sum(saturated_edges.values())
 
-        #TODO: implement this
+        if sum_edges == flow_value:
+            return False
 
-        return False
-
-    def linear_programming(self, saturated_edges):
-        '''Uses linear programming to determine if the team with given team ID
-        has been eliminated. We recommend using a picos solver to solve the
-        linear programming problem once you have it set up.
-        Do not use the flow_constraint method that Picos provides (it does all of the work for you)
-        We want you to set up the constraint equations using picos (hint: add_constraint is the method you want)
-
-        saturated_edges: dictionary of saturated edges that maps team pairs to
-        the amount of additional games they have against each other
-        returns True if team is eliminated, False otherwise
-        '''
-
-        maxflow=pic.Problem()
-
-        #TODO: implement this
-        # we recommend using the 'cvxopt' solver once you set up the problem
-
-        return False
-
+        return True
 
     def checkTeam(self, team):
         '''Checks that the team actually exists in this division.
@@ -191,6 +219,6 @@ if __name__ == '__main__':
         filename = sys.argv[1]
         division = Division(filename)
         for (ID, team) in division.teams.items():
-            print(f'{team.name}: Eliminated? {division.is_eliminated(team.ID, "Linear Programming")}')
+            print(f'{team.name}: Eliminated? {division.is_eliminated(team.ID, "Network Flows")}')
     else:
         print("To run this code, please specify an input file name. Example: python badminton_elimination.py teams2.txt.")
